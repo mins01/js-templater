@@ -80,7 +80,8 @@ class Templater {
         if (typeof str !== "string") { throw new TypeError('Only strings are supported.'); }
         const varNames = this.extractVariables(str); // 문자열 내부에 선언된 변수 뽑아오기
         const defVars = this.#defVars = varNames.reduce((acc, key) => { acc[key] = undefined; return acc; }, {});
-        const preparedStr = this.#preparedStr = this.prepareTemplateString(str,useHtmlUnescape);
+        // const preparedStr = this.#preparedStr = this.prepareTemplateString(str,useHtmlUnescape);
+        const preparedStr = this.#preparedStr = this.parse(str,useHtmlUnescape);
         return {defVars,preparedStr}
     }
     /**
@@ -285,10 +286,10 @@ class Templater {
     * @param {string} str - 변환할 템플릿 문자열입니다.
     * @param {boolean} [useHtmlUnescape=false] - true일 경우, 템플릿 내 HTML 엔티티를 복원합니다.
     * @returns {string} 실행 가능한 템플릿 문자열입니다.
+    * @deprecated
+    * @see parse
     */
     prepareTemplateString(str,useHtmlUnescape=false){
-        // console.log('in-prepareTemplateString',str);
-        
         return str
         // .replace(/\\$(\{+)/g,(match, p1) => `\\$${p1}`) // { escape  \${+~ => \${+
         .replace(/\$(\{+)/g,(match, p1) => `\\\$${p1}`) // { escape  ${+~ => \${+
@@ -316,5 +317,137 @@ class Templater {
             return `${p1}` 
         }) // {} escape
         ;
+    }
+
+    /**
+    * 템플릿 문자열을 실행 가능한 템플릿 문자열로 변환하여 반환합니다.
+    * 선택적으로 HTML 엔티티를 unescape 처리할 수 있습니다.
+    *
+    * @param {string} str - 변환할 템플릿 문자열입니다.
+    * @param {boolean} [useHtmlUnescape=false] - true일 경우, 템플릿 내 HTML 엔티티를 복원합니다.
+    * @returns {string} 실행 가능한 템플릿 문자열입니다.
+    */
+    static parse(str,useHtmlUnescape=false){
+        const propsMap = {
+            '@{{{':{type:'html_raw',mark:true,start:true,escaped:true},
+            '{{{':{type:'html_raw',mark:true,start:true,escaped:false},
+            '@{{':{type:'html_escape',mark:true,start:true,escaped:true},
+            '{{':{type:'html_escape',mark:true,start:true,escaped:false},
+            '}}}':{type:'html_raw',mark:true,start:false,escaped:true},
+            '}}':{type:'html_escape',mark:true,start:false,escaped:false},
+            '"':{type:'double_quote',mark:false,start:false,escaped:false},
+            "'":{type:'single_quote',mark:false,start:false,escaped:false},
+        }
+        const stringProps = {type:'string',mark:false,start:false,escaped:false};
+
+        let nodes = [];
+        let node = null;
+        let quote_type = null;
+
+        const tokens = str.match(/@\{\{\{|\{\{\{|\@\{\{|\{\{|\}\}\}|\}\}|['"]|[^@{}'"]+/g);
+        
+        tokens.forEach((token,i)=>{
+            const props = propsMap[token]??stringProps;
+            // console.log(token,{...props});
+            
+            if(node === null){
+                if(props.mark){
+                    console.log(props);
+                    
+                    if(props.start){
+                        node = { 'props':props, 'texts':[token] }
+                        // console.log('마크 시작');
+                    }else{
+                        throw new Error(`시작 마크 없이 끝맺음 마크: ${node.texts.join('')}${token}<<<---`);
+                    }
+                }else{// quote
+                    node = { 'props':stringProps, 'texts':[token] }
+                }
+            }else{
+                if(node.props.type=='string'){
+                    if(props.mark){
+                        if(props.start){
+                            nodes.push(node)
+                            node = { 'props':props, 'texts':[token] }
+                            // console.log('마크 시작');
+                        }else{  //마크 완료
+                            // throw new Error(`잘못된 닫기 마크 - 2: ${node.texts.join('')}${token}<<<---`);
+                            throw new SyntaxError(`잘못 템플릿 닫기. ${node.texts.join('')}${token}<<<---`);
+                        }
+                    }else{
+                        node.texts.push(token);
+                    }
+                }else if(node.props.mark){ //마크 속에서
+                    if(quote_type){
+                        node.texts.push(token);
+                        if(quote_type === props.type){
+                            quote_type = null;
+                        }
+                    }else{
+                        if(props.mark){
+                            if(props.start){
+                                throw new SyntaxError(`잘못 템플릿 열기. ${node.texts.join('')}${token}<<<---`);
+                            }if(node.props.type !== props.type){
+                                throw new SyntaxError(`템플릿 열기과 닫기가 다름. ${node.texts.join('')}${token}<<<---`);
+                            } else{  //마크 완료
+                                node.texts.push(token);
+                                nodes.push(node)
+                                node = null
+                            }
+                        }else{
+                            if(props.type==='string'){
+                                node.texts.push(token);
+                            }else{ // quote
+                                node.texts.push(token);
+                                if(!quote_type){
+                                    quote_type = props.type;
+                                }else{
+                                    throw new SyntaxError(`잘못된 따옴표. ${node.texts.join('')}${token}<<<---`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // console.log(props,token)
+        })
+        if(node){
+            nodes.push(node)
+            node = null;
+        }
+        const outs = [];
+        nodes.forEach((node,i)=>{
+            if(node.props.mark){
+                if(node.props.escaped){
+                    let exp = '{{'+node.texts.slice(1).join('');
+                    outs.push(exp);
+                }else{
+                    if(node.props.type == 'html_escape'){
+                        let exp = node.texts.slice(1, -1).join('');
+                        if(useHtmlUnescape){ exp = this.htmlUnescape(exp); }
+                        outs.push('${ $SYS.htmlEscape( '+exp+' ) }');
+                    }if(node.props.type == 'html_raw'){
+                        let exp = node.texts.slice(1, -1).join('');
+                        if(useHtmlUnescape){ exp = this.htmlUnescape(exp); }
+                        outs.push('${ $SYS.htmlRaw( '+exp+' ) }');
+                    }
+                }
+            }else{
+                outs.push(node.texts.join(''));
+            }
+            // console.log(node.texts.join(''),outs[i],{...node.props},{...node.texts});
+        })
+        return outs.join('');
+        // console.log(nodes);
+        
+
+        // console.log(tokens)
+
+        
+    }
+    parse(str,useHtmlUnescape=false){
+        return this.constructor.parse(...arguments)
+
     }
 }
