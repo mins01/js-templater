@@ -28,6 +28,7 @@
  * @method toFragment - 최종 문자열을 DocumentFragment로 변환
  * @method extractVariables - 템플릿 내 변수명 추출
  * @method prepareTemplateString - 템플릿 문자열을 실행 가능한 형태로 변환
+ * @method parse - 템플릿 문자열을 실행 가능한 형태로 변환
  *
  * @method static htmlEscape - 문자열을 HTML 엔티티로 변환
  * @method static htmlUnescape - HTML 엔티티를 일반 문자열로 복원
@@ -447,7 +448,7 @@ class Templater {
         
     }
     parse(str,useHtmlUnescape=false){
-        return this.constructor.parse(...arguments)
+        return this.constructor.parse(str,useHtmlUnescape)
 
     }
 }
