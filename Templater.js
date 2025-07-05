@@ -277,7 +277,10 @@ class Templater {
             }
         }
         
-        return [...variables];
+        // 전역에서 사용할 객체 제외
+        const filtered = [...variables].filter(name => {return !/^[A-Z]/.test(name) && !(name in globalThis)})      
+
+        return [...filtered];
     }
     
     /**
