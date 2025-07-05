@@ -62,6 +62,12 @@ class Templater {
      * @private
      */
     #preparedStr = null;
+
+    constructor(str=undefined, useHtmlUnescape=false){
+        if(str){
+            this.prepare(str, useHtmlUnescape);
+        }
+    }
     
     
     /**

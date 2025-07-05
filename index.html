@@ -143,9 +143,9 @@
         
     }
     
-    const templater2 = new Templater();
+    const templater2 = new Templater(template_2.innerHTML,true);
     templater2.debug = true;
-    templater2.prepare(template_2.innerHTML);
+    // templater2.prepare(template_2.innerHTML);
     console.log(templater2);
     [1,2,3,4,5].map((v)=>{
         return {label:`라벨${v}`}
